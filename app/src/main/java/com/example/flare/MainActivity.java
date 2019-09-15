@@ -1,13 +1,17 @@
 package com.example.flare;
 
+import android.content.pm.PackageManager;
+import android.location.Location;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
@@ -17,11 +21,24 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.tasks.OnSuccessListener;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import static android.Manifest.permission.ACCESS_FINE_LOCATION;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
     private FusedLocationProviderClient fusedLocationClient;
     private GoogleMap mMap;
+    private LatLng lastKnownLocation;
+    private Set<String, Location> safeLocations = new HashSet<>();
 
+    public final float zoom = 16f;
+
+    private void requestPermission(){
+        ActivityCompat.requestPermissions(this, new String[]{ACCESS_FINE_LOCATION}, 1);
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -29,23 +46,40 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
+        requestPermission();
+
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        Button manual_flare = findViewById(R.id.manual_flare);//get id of manual_button
-        Button disaster_guide = findViewById(R.id.disaster_guide);//get id of disaster_guide
 
+        Button manual_flare = findViewById(R.id.manual_flare);//get id of manual_button
         manual_flare.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) {
-                System.out.println(fusedLocationClient);
+            public void onClick(final View view) {
+                if(ActivityCompat.checkSelfPermission(MainActivity.this, ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+                    return;
+                }
+                fusedLocationClient.getLastLocation().addOnSuccessListener(MainActivity.this, new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        if(location != null){
+                            lastKnownLocation = new LatLng(location.getLatitude(), location.getLongitude());
+                            flareConfirmationMessage(view);
+                            mMap.addMarker(new MarkerOptions().position(lastKnownLocation).title("Current Location"));
+                            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(lastKnownLocation,zoom));
+                        } else{
+                            flareErrorMessage(view);
+                        }
+                    }
+                });
             }
         });
 
-
+        Button disaster_guide = findViewById(R.id.disaster_guide);//get id of disaster_guide
         disaster_guide.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -53,6 +87,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         });
 
+    }
+
+    public void flareConfirmationMessage(View v){
+        Toast.makeText(MainActivity.this, "Flare sent. Help is on the way!", Toast.LENGTH_LONG).show();
+    }
+
+    public void flareErrorMessage(View v){
+        Toast.makeText(MainActivity.this, "Flare not sent. Find a network or turn on Location Services!", Toast.LENGTH_LONG).show();
     }
     /**
      * Manipulates the map once available.
@@ -67,10 +109,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
 
-        // Add a marker in Sydney and move the camera
-        LatLng sydney = new LatLng(-34, 151);
-        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
+        if(ActivityCompat.checkSelfPermission(MainActivity.this, ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+            return;
+        }
+
+        fusedLocationClient.getLastLocation().addOnSuccessListener(MainActivity.this, new OnSuccessListener<Location>() {
+            @Override
+            public void onSuccess(Location location) {
+                if(location != null){
+                    lastKnownLocation = new LatLng(location.getLatitude(), location.getLongitude());
+                }
+            }
+        });
+        if(lastKnownLocation != null){
+            mMap.addMarker(new MarkerOptions().position(lastKnownLocation).title("Current Location"));
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(lastKnownLocation,zoom));
+        } else{
+            return;
+        }
+
     }
 
     @Override
