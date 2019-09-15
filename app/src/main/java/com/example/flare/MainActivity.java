@@ -1,14 +1,19 @@
 package com.example.flare;
 
+import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
+import android.telephony.TelephonyManager;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
@@ -24,29 +29,53 @@ import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.util.HashSet;
-import java.util.Set;
 
 import static android.Manifest.permission.ACCESS_FINE_LOCATION;
+import static android.Manifest.permission.INTERNET;
+import static android.Manifest.permission.READ_PHONE_STATE;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
     private FusedLocationProviderClient fusedLocationClient;
     private GoogleMap mMap;
     private LatLng lastKnownLocation;
-    private Set<String, Location> safeLocations = new HashSet<>();
+    private LatLng closestSafety;
+    private int phoneNumber;
+
+
+    HashSet<LatLng> safeLocations = new HashSet<>();
+
 
     public final float zoom = 16f;
 
-    private void requestPermission(){
+    private void requestPermission() {
         ActivityCompat.requestPermissions(this, new String[]{ACCESS_FINE_LOCATION}, 1);
+        ActivityCompat.requestPermissions(this, new String[]{READ_PHONE_STATE}, 1);
+        ActivityCompat.requestPermissions(this, new String[]{INTERNET}, 1);
     }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-
         requestPermission();
+
+        TelephonyManager tMgr = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
+        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.READ_PHONE_NUMBERS) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        String mPhoneNumber = tMgr.getLine1Number();
+
+
+        LatLng massGen = new LatLng(42.362804, -71.068634);
+        LatLng mIT = new LatLng(42.359386, -71.09395);
+        LatLng harvard = new LatLng(42.37778, -71.12326);
+        safeLocations.add(massGen);
+        safeLocations.add(mIT);
+        safeLocations.add(harvard);
+
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
@@ -71,6 +100,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             flareConfirmationMessage(view);
                             mMap.addMarker(new MarkerOptions().position(lastKnownLocation).title("Current Location"));
                             mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(lastKnownLocation,zoom));
+                            LatLng closestSafe = null;
+                            for(LatLng loc : safeLocations){
+                                if(closestSafe == null){
+                                    closestSafe = loc;
+                                } else{
+                                    if(distFrom(lastKnownLocation.latitude,lastKnownLocation.longitude,loc.latitude,loc.longitude) < distFrom(lastKnownLocation.latitude,lastKnownLocation.longitude,closestSafe.latitude,closestSafe.longitude)){
+                                        closestSafe = loc;
+                                    }
+                                }
+                            }
+                            mMap.addMarker(new MarkerOptions().position(closestSafe).title("Closest Safety"));
                         } else{
                             flareErrorMessage(view);
                         }
@@ -151,4 +191,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         return super.onOptionsItemSelected(item);
     }
+
+    public static float distFrom(double lat1, double lng1, double lat2, double lng2) {
+        double earthRadius = 6371000; //meters
+        double dLat = Math.toRadians(lat2-lat1);
+        double dLng = Math.toRadians(lng2-lng1);
+        double a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                        Math.sin(dLng/2) * Math.sin(dLng/2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        float dist = (float) (earthRadius * c);
+        return dist;
+    }
+
+    public interface SmsListener {
+        public void messageReceived(String messageText);
+    }
+
 }
